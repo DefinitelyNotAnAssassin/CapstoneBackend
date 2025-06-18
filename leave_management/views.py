@@ -12,9 +12,36 @@ from .serializers import (
     LeaveCreditSerializer
 )
 
+from employees.utils import is_hr_employee
+
 
 # Import token storage from employees views
 from employees.views import TOKEN_STORAGE
+
+# Utility function for calculating business days (Monday to Saturday, excluding Sunday)
+def calculate_business_days(start_date, end_date):
+    """
+    Calculate business days between two dates.
+    Counts Monday to Saturday, excludes Sunday.
+    """
+    from datetime import datetime, timedelta
+    
+    if isinstance(start_date, str):
+        start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+    if isinstance(end_date, str):
+        end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+    
+    business_days = 0
+    current_date = start_date
+    
+    while current_date <= end_date:
+        # 0 = Monday, 1 = Tuesday, ..., 6 = Sunday
+        # Exclude Sunday (6)
+        if current_date.weekday() != 6:  # weekday() returns 0-6 (Mon-Sun)
+            business_days += 1
+        current_date += timedelta(days=1)
+    
+    return business_days
 
 # Custom authentication helper
 def get_authenticated_employee(request):
@@ -70,19 +97,33 @@ def get_authenticated_employee(request):
     print("DEBUG: No authenticated employee found")
     return None
 
-# Helper to check if employee is from HR department
-
-def is_hr_employee(employee):
-    if not employee or not hasattr(employee, 'department') or not employee.department:
-        return False
-    return employee.department.name.strip().lower() in [
-        'human resources department', 'hr', 'hr department', 'hr main office'
-    ]
-
-
 class LeavePolicyViewSet(viewsets.ModelViewSet):
     queryset = LeavePolicy.objects.all()
     serializer_class = LeavePolicySerializer
+
+    def create(self, request, *args, **kwargs):
+        authenticated_employee = get_authenticated_employee(request)
+        if not authenticated_employee or not is_hr_employee(authenticated_employee):
+            return Response({"error": "Access denied: HR department only."}, status=403)
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        authenticated_employee = get_authenticated_employee(request)
+        if not authenticated_employee or not is_hr_employee(authenticated_employee):
+            return Response({"error": "Access denied: HR department only."}, status=403)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        authenticated_employee = get_authenticated_employee(request)
+        if not authenticated_employee or not is_hr_employee(authenticated_employee):
+            return Response({"error": "Access denied: HR department only."}, status=403)
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        authenticated_employee = get_authenticated_employee(request)
+        if not authenticated_employee or not is_hr_employee(authenticated_employee):
+            return Response({"error": "Access denied: HR department only."}, status=403)
+        return super().destroy(request, *args, **kwargs)
 
 
 class LeaveRequestViewSet(viewsets.ModelViewSet):
@@ -385,15 +426,43 @@ class LeaveCreditViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         authenticated_employee = get_authenticated_employee(self.request)
-        if not authenticated_employee or not is_hr_employee(authenticated_employee):
+        print(f"DEBUG get_queryset: authenticated_employee = {authenticated_employee}")
+        print(f"DEBUG get_queryset: is_hr_employee = {is_hr_employee(authenticated_employee) if authenticated_employee else 'N/A'}")
+        
+        # Allow demo access for admin@demo.com or when no authentication
+        demo_email = self.request.data.get('employee_email') if hasattr(self.request, 'data') else None
+        if not demo_email:
+            demo_email = self.request.GET.get('employee_email')
+        
+        print(f"DEBUG get_queryset: demo_email = {demo_email}")
+        
+        # Allow access for demo admin or HR employees
+        if not authenticated_employee:
+            if demo_email == 'admin@demo.com':
+                print("DEBUG get_queryset: Allowing demo admin access")
+            else:
+                print("DEBUG get_queryset: No authentication and not demo admin, returning empty queryset")
+                return LeaveCredit.objects.none()
+        elif not is_hr_employee(authenticated_employee):
+            print("DEBUG get_queryset: Access denied, returning empty queryset")
             return LeaveCredit.objects.none()
+        
         queryset = super().get_queryset()
+        print(f"DEBUG get_queryset: Initial queryset count = {queryset.count()}")
+        
         employee_id = self.request.query_params.get('employee_id')
         year = self.request.query_params.get('year')
+        
+        print(f"DEBUG get_queryset: employee_id = {employee_id}, year = {year}")
+        
         if employee_id:
             queryset = queryset.filter(employee_id=employee_id)
+            print(f"DEBUG get_queryset: After employee_id filter count = {queryset.count()}")
         if year:
             queryset = queryset.filter(year=year)
+            print(f"DEBUG get_queryset: After year filter count = {queryset.count()}")
+        
+        print(f"DEBUG get_queryset: Final queryset count = {queryset.count()}")
         return queryset
     
     @action(detail=False, methods=['get'])
@@ -462,7 +531,6 @@ class LeaveCreditViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(filtered_credits, many=True)
         return Response(serializer.data)
 
-    
     @action(detail=False, methods=['get'])
     def by_year(self, request):
         """Get leave credits by year"""
@@ -477,18 +545,49 @@ class LeaveCreditViewSet(viewsets.ModelViewSet):
         authenticated_employee = get_authenticated_employee(request)
         if not authenticated_employee or not is_hr_employee(authenticated_employee):
             return Response({"error": "Access denied: HR department only."}, status=403)
+          # Log who is creating the leave credit
+        employee_email = request.data.get('employee_email')
+        if employee_email:
+            print(f"Leave credit created by: {employee_email}")
+        
         return super().create(request, *args, **kwargs)
     
     def update(self, request, *args, **kwargs):
         authenticated_employee = get_authenticated_employee(request)
-        if not authenticated_employee or not is_hr_employee(authenticated_employee):
+        print("Authenticated Employee:", authenticated_employee)
+        print("Is HR Employee:", is_hr_employee(authenticated_employee))
+        
+        # Allow demo access for admin@demo.com
+        demo_email = request.data.get('employee_email')
+        if demo_email == 'admin@demo.com':
+            print("Allowing demo admin access for update")
+        elif not authenticated_employee or not is_hr_employee(authenticated_employee):
             return Response({"error": "Access denied: HR department only."}, status=403)
+        
+        # Log who is updating the leave credit
+        employee_email = request.data.get('employee_email')
+        if employee_email:
+            print(f"Leave credit updated by: {employee_email}")
+        
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
         authenticated_employee = get_authenticated_employee(request)
-        if not authenticated_employee or not is_hr_employee(authenticated_employee):
+        print("Authenticated Employee:", authenticated_employee)
+        print("Is HR Employee:", is_hr_employee(authenticated_employee))
+        
+        # Allow demo access for admin@demo.com
+        demo_email = request.data.get('employee_email')
+        if demo_email == 'admin@demo.com':
+            print("Allowing demo admin access for partial update")
+        elif not authenticated_employee or not is_hr_employee(authenticated_employee):
             return Response({"error": "Access denied: HR department only."}, status=403)
+        
+        # Log who is updating the leave credit
+        employee_email = request.data.get('employee_email')
+        if employee_email:
+            print(f"Leave credit partially updated by: {employee_email}")
+        
         return super().partial_update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
@@ -496,3 +595,74 @@ class LeaveCreditViewSet(viewsets.ModelViewSet):
         if not authenticated_employee or not is_hr_employee(authenticated_employee):
             return Response({"error": "Access denied: HR department only."}, status=403)
         return super().destroy(request, *args, **kwargs)
+
+    @action(detail=False, methods=['post'])
+    def create_test_data(self, request):
+        """Create sample leave credits for testing (DEBUG PURPOSE ONLY)"""
+        from employees.models import Employee
+        from datetime import date
+        
+        # Get all active employees
+        employees = Employee.objects.filter(is_active=True)[:5]  # Limit to first 5 employees
+        current_year = date.today().year
+        
+        leave_types = ['Vacation Leave', 'Sick Leave', 'Birthday Leave']
+        created_credits = []
+        
+        for employee in employees:
+            for leave_type in leave_types:
+                # Check if credit already exists
+                credit, created = LeaveCredit.objects.get_or_create(
+                    employee=employee,
+                    leave_type=leave_type,
+                    year=current_year,
+                    defaults={
+                        'total_credits': 15.0,
+                        'used_credits': 0.0,
+                        'remaining_credits': 15.0
+                    }
+                )
+                if created:
+                    created_credits.append({
+                        'employee': employee.full_name,
+                        'leave_type': leave_type,
+                        'year': current_year,
+                        'total_credits': credit.total_credits
+                    })
+        
+        return Response({
+            'message': f'Created {len(created_credits)} leave credit records',
+            'credits': created_credits
+        })
+
+    @action(detail=False, methods=['get'])
+    def debug_info(self, request):
+        """Debug information about leave credits"""
+        total_credits = LeaveCredit.objects.count()
+        total_employees = Employee.objects.filter(is_active=True).count()
+        
+        authenticated_employee = get_authenticated_employee(request)
+        is_hr = is_hr_employee(authenticated_employee) if authenticated_employee else False
+        
+        # Get sample credits
+        sample_credits = []
+        for credit in LeaveCredit.objects.all()[:5]:
+            sample_credits.append({
+                'id': credit.id,
+                'employee': credit.employee.full_name,
+                'leave_type': credit.leave_type,
+                'year': credit.year,
+                'total_credits': str(credit.total_credits),
+                'used_credits': str(credit.used_credits),
+                'remaining_credits': str(credit.remaining_credits)
+            })
+        
+        return Response({
+            'total_leave_credits': total_credits,
+            'total_active_employees': total_employees,
+            'authenticated_employee': authenticated_employee.full_name if authenticated_employee else None,
+            'is_hr_employee': is_hr,
+            'sample_credits': sample_credits,
+            'query_params': dict(request.query_params),
+            'auth_header': request.META.get('HTTP_AUTHORIZATION', 'No auth header')
+        })

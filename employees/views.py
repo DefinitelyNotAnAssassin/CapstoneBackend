@@ -19,6 +19,7 @@ from .serializers import (
     EmployeeEducationSerializer, EmployeeSiblingSerializer, EmployeeDependentSerializer,
     EmployeeAwardSerializer, EmployeeLicenseSerializer, EmployeeScheduleSerializer
 )
+from .utils import is_hr_employee
 
 
 # Simple token storage (in production, use Redis or proper token management)

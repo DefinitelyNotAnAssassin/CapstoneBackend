@@ -388,10 +388,23 @@ def create_initial_leave_credits(employee):
     # Get all leave policies
     leave_policies = LeavePolicy.objects.all()
     
+    # Determine employee's position type
+    employee_position_type = None
+    if employee.position:
+        employee_position_type = employee.position.type
+    
     for policy in leave_policies:
         # Check if the policy applies to this employee's position type
-        # For now, we'll create credits for all policies
-        # You can add logic here to check applicable_positions if needed
+        policy_applies = True
+        if policy.applicable_positions and employee_position_type:
+            # If policy has specific applicable positions, check if employee's position type is included
+            policy_applies = employee_position_type in policy.applicable_positions
+        elif policy.applicable_positions and not employee_position_type:
+            # If policy has restrictions but employee has no position type, skip
+            policy_applies = False
+        
+        if not policy_applies:
+            continue
         
         # Create LeaveCredit record
         leave_credit, created = LeaveCredit.objects.get_or_create(
@@ -416,3 +429,7 @@ def create_initial_leave_credits(employee):
                 'pending_requests': 0,
             }
         )
+        
+        # Log the creation for debugging
+        if created:
+            print(f"Created leave credit for {employee.full_name}: {policy.leave_type} - {policy.days_allowed} days")

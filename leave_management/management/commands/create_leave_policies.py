@@ -4,6 +4,7 @@ from leave_management.models import LeavePolicy
 
 class Command(BaseCommand):
     help = 'Create default leave policies for the organization'
+    # Run this command with: py manage.py create_leave_policies
 
     def handle(self, *args, **options):
         """Create default leave policies"""
