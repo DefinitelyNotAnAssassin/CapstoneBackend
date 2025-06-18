@@ -55,6 +55,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
     office_name = serializers.CharField(source='office.name', read_only=True)
     program_name = serializers.CharField(source='program.name', read_only=True)
     full_name = serializers.CharField(read_only=True)
+      # Role information (read-only)
+    academic_role_level = serializers.IntegerField(read_only=True)
+    can_approve_leaves = serializers.BooleanField(read_only=True)
+    approval_scope = serializers.CharField(read_only=True)
+    isHR = serializers.BooleanField(read_only=True)
     
     # Nested serializers for related data
     additional_education = EmployeeEducationSerializer(many=True, read_only=True)
@@ -115,14 +120,23 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     position_title = serializers.CharField(source='position.title', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
     office_name = serializers.CharField(source='office.name', read_only=True)
-    full_name = serializers.CharField(read_only=True)
-    
+    program_name = serializers.CharField(source='program.name', read_only=True)
+    full_name = serializers.CharField(read_only=True)    # Role information (read-only)
+    academic_role_level = serializers.SerializerMethodField()
+    can_approve_leaves = serializers.BooleanField(read_only=True)
+    isHR = serializers.BooleanField(read_only=True)
+
+    def get_academic_role_level(self, obj):
+        # Default to 3 (Regular Faculty) if undefined
+        return obj.academic_role_level if obj.academic_role_level is not None else 3
+
     class Meta:
         model = Employee
         fields = [
             'id', 'employee_id', 'first_name', 'middle_name', 'last_name', 
             'full_name', 'email', 'mobile_no', 'position_title', 
-            'department_name', 'office_name', 'profile_image', 'is_active'
+            'department_name', 'office_name', 'program_name', 'profile_image', 'is_active',
+            'academic_role_level', 'can_approve_leaves', 'isHR'
         ]
 
 

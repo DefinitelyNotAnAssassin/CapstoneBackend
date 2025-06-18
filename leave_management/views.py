@@ -6,10 +6,10 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db.models import Q
 from employees.models import Employee
-from .models import LeavePolicy, LeaveRequest, LeaveCredit, LeaveBalance
+from .models import LeavePolicy, LeaveRequest, LeaveCredit
 from .serializers import (
     LeavePolicySerializer, LeaveRequestSerializer, LeaveRequestCreateSerializer,
-    LeaveCreditSerializer, LeaveBalanceSerializer
+    LeaveCreditSerializer
 )
 
 
@@ -49,6 +49,7 @@ def get_authenticated_employee(request):
     # Also check query parameters
     if not email:
         email = request.GET.get('employee_email')
+        
     
     if email:
         try:
@@ -58,7 +59,6 @@ def get_authenticated_employee(request):
         except Employee.DoesNotExist:
             print(f"DEBUG: Employee with email {email} not found")
     
-    # Fallback: check if user is authenticated via Django auth
     if hasattr(request, 'user') and request.user.is_authenticated:
         try:
             employee = Employee.objects.get(user=request.user, is_active=True)
@@ -69,6 +69,15 @@ def get_authenticated_employee(request):
     
     print("DEBUG: No authenticated employee found")
     return None
+
+# Helper to check if employee is from HR department
+
+def is_hr_employee(employee):
+    if not employee or not hasattr(employee, 'department') or not employee.department:
+        return False
+    return employee.department.name.strip().lower() in [
+        'human resources department', 'hr', 'hr department', 'hr main office'
+    ]
 
 
 class LeavePolicyViewSet(viewsets.ModelViewSet):
@@ -116,9 +125,26 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         authenticated_employee = get_authenticated_employee(request)
         if not authenticated_employee:
             return Response({"error": "Authentication required"}, status=401)
-          # Add the authenticated employee to the request data
+
+        # Add the authenticated employee to the request data
         request_data = request.data.copy()
         request_data['employee'] = authenticated_employee.id
+
+        # Reformat start_date and end_date to 'YYYY-MM-DD'
+        start_date = request_data.get('start_date')
+        end_date = request_data.get('end_date')
+
+        if start_date:
+            try:
+                request_data['start_date'] = timezone.datetime.strptime(start_date, "%Y-%m-%dT%H:%M:%S").strftime("%Y-%m-%d")
+            except (ValueError, TypeError):
+                return Response({"error": "Invalid start_date format. Use YYYY-MM-DD."}, status=400)
+
+        if end_date:
+            try:
+                request_data['end_date'] = timezone.datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%S").strftime("%Y-%m-%d")
+            except (ValueError, TypeError):
+                return Response({"error": "Invalid end_date format. Use YYYY-MM-DD."}, status=400)
         
         serializer = LeaveRequestCreateSerializer(data=request_data)
         if serializer.is_valid():
@@ -194,7 +220,7 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def approve_request(self, request, pk=None):
-        """Approve a leave request (role-based)"""
+        """Approve a leave request (role-based) and deduct leave credits from LeaveCredit only"""
         employee = get_authenticated_employee(request)
         if not employee:
             return Response({"error": "Authentication required"}, status=401)
@@ -213,6 +239,28 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
                 "error": f"Cannot approve request with status: {leave_request.status}"
             }, status=400)
         
+        # Deduct leave credits from LeaveCredit
+        from datetime import date
+        year = leave_request.start_date.year if hasattr(leave_request, 'start_date') and leave_request.start_date else date.today().year
+        try:
+            leave_credit = LeaveCredit.objects.get(
+                employee=leave_request.employee,
+                leave_type=leave_request.leave_type,
+                year=year
+            )
+        except LeaveCredit.DoesNotExist:
+            return Response({
+                "error": f"No leave credit found for {leave_request.leave_type} in {year}"
+            }, status=400)
+        
+        if leave_credit.remaining_credits < leave_request.days_requested:
+            return Response({
+                "error": "Insufficient leave credits"
+            }, status=400)
+        
+        leave_credit.used_credits += leave_request.days_requested
+        leave_credit.save()
+        
         # Approve the request
         leave_request.status = 'Approved'
         leave_request.approved_by = employee
@@ -222,7 +270,7 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         
         serializer = self.get_serializer(leave_request)
         return Response({
-            "message": "Leave request approved successfully",
+            "message": "Leave request approved successfully. Leave credit updated.",
             "request": serializer.data
         })
     
@@ -336,15 +384,16 @@ class LeaveCreditViewSet(viewsets.ModelViewSet):
     serializer_class = LeaveCreditSerializer
     
     def get_queryset(self):
+        authenticated_employee = get_authenticated_employee(self.request)
+        if not authenticated_employee or not is_hr_employee(authenticated_employee):
+            return LeaveCredit.objects.none()
         queryset = super().get_queryset()
         employee_id = self.request.query_params.get('employee_id')
         year = self.request.query_params.get('year')
-        
         if employee_id:
             queryset = queryset.filter(employee_id=employee_id)
         if year:
             queryset = queryset.filter(year=year)
-            
         return queryset
     
     @action(detail=False, methods=['get'])
@@ -372,8 +421,7 @@ class LeaveCreditViewSet(viewsets.ModelViewSet):
             elif credit.leave_type == 'Paternity Leave' and employee_gender != 'Male':
                 continue
             else:
-                filtered_credits.append(credit)
-        
+                filtered_credits.append(credit)        
         serializer = self.get_serializer(filtered_credits, many=True)
         return Response(serializer.data)
     
@@ -383,13 +431,37 @@ class LeaveCreditViewSet(viewsets.ModelViewSet):
         employee_id = request.query_params.get('employee_id')
         year = request.query_params.get('year')
         
-        if employee_id:
-            credits = self.queryset.filter(employee_id=employee_id)
-            if year:
-                credits = credits.filter(year=year)
-            serializer = self.get_serializer(credits, many=True)
-            return Response(serializer.data)
-        return Response({"error": "employee_id parameter required"}, status=400)
+        if not employee_id:
+            return Response({"error": "employee_id parameter required"}, status=400)
+        
+
+        # Check if the authenticated employee can view credits for the specified employee
+        try:
+            target_employee = Employee.objects.get(id=employee_id, is_active=True)
+        except Employee.DoesNotExist:
+            return Response({"error": "Employee not found"}, status=404)
+        
+  
+        credits = self.queryset.filter(employee_id=employee_id)
+        if year:
+            credits = credits.filter(year=year)
+            # Filter based on target employee's gender for gender-specific leaves
+        employee_gender = target_employee.gender
+        filtered_credits = []
+        
+        for credit in credits:
+            # Filter maternity leave for females only
+            if credit.leave_type == 'Maternity Leave' and employee_gender != 'Female':
+                continue
+            # Filter paternity leave for males only
+            elif credit.leave_type == 'Paternity Leave' and employee_gender != 'Male':
+                continue
+            else:
+                filtered_credits.append(credit)
+        
+        serializer = self.get_serializer(filtered_credits, many=True)
+        return Response(serializer.data)
+
     
     @action(detail=False, methods=['get'])
     def by_year(self, request):
@@ -401,43 +473,26 @@ class LeaveCreditViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
         return Response({"error": "year parameter required"}, status=400)
 
-
-class LeaveBalanceViewSet(viewsets.ModelViewSet):
-    queryset = LeaveBalance.objects.select_related('employee').all()
-    serializer_class = LeaveBalanceSerializer
-    
-    @action(detail=False, methods=['get'])
-    def my_balances(self, request):
-        """Get leave balances for the authenticated employee"""
+    def create(self, request, *args, **kwargs):
         authenticated_employee = get_authenticated_employee(request)
-        if not authenticated_employee:
-            return Response({"error": "Authentication required"}, status=401)
-        
-        balances = self.queryset.filter(employee=authenticated_employee)
-        
-        # Filter based on employee's gender
-        employee_gender = authenticated_employee.gender
-        filtered_balances = []
-        
-        for balance in balances:
-            # Filter maternity leave for females only
-            if balance.leave_type == 'Maternity Leave' and employee_gender != 'Female':
-                continue
-            # Filter paternity leave for males only
-            elif balance.leave_type == 'Paternity Leave' and employee_gender != 'Male':
-                continue
-            else:
-                filtered_balances.append(balance)
-        
-        serializer = self.get_serializer(filtered_balances, many=True)
-        return Response(serializer.data)
+        if not authenticated_employee or not is_hr_employee(authenticated_employee):
+            return Response({"error": "Access denied: HR department only."}, status=403)
+        return super().create(request, *args, **kwargs)
     
-    @action(detail=False, methods=['get'])
-    def by_employee(self, request):
-        """Get leave balances by employee ID"""
-        employee_id = request.query_params.get('employee_id')
-        if employee_id:
-            balances = self.queryset.filter(employee_id=employee_id)
-            serializer = self.get_serializer(balances, many=True)
-            return Response(serializer.data)
-        return Response({"error": "employee_id parameter required"}, status=400)
+    def update(self, request, *args, **kwargs):
+        authenticated_employee = get_authenticated_employee(request)
+        if not authenticated_employee or not is_hr_employee(authenticated_employee):
+            return Response({"error": "Access denied: HR department only."}, status=403)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        authenticated_employee = get_authenticated_employee(request)
+        if not authenticated_employee or not is_hr_employee(authenticated_employee):
+            return Response({"error": "Access denied: HR department only."}, status=403)
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        authenticated_employee = get_authenticated_employee(request)
+        if not authenticated_employee or not is_hr_employee(authenticated_employee):
+            return Response({"error": "Access denied: HR department only."}, status=403)
+        return super().destroy(request, *args, **kwargs)

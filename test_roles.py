@@ -2,7 +2,7 @@ import requests
 import json
 
 # API base URL
-BASE_URL = 'http://localhost:8000'
+BASE_URL = 'http://127.0.0.1:8000'
 
 def test_authentication():
     """Test employee authentication"""

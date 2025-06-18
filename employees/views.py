@@ -102,7 +102,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         user_id = request.query_params.get('user_id')
         if user_id:
             try:
-                employee = self.queryset.get(user_id=user_id)
+                employee = self.queryset.get(user__id=user_id)
                 serializer = self.get_serializer(employee)
                 return Response(serializer.data)
             except Employee.DoesNotExist:

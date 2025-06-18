@@ -1,5 +1,7 @@
 from rest_framework import serializers
 from .models import LeavePolicy, LeaveRequest, LeaveCredit, LeaveBalance
+from employees.serializers import EmployeeListSerializer
+from employees.models import Employee
 
 
 class LeavePolicySerializer(serializers.ModelSerializer):
@@ -8,9 +10,21 @@ class LeavePolicySerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class ApprovedByMiniSerializer(serializers.ModelSerializer):
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    position = serializers.CharField(source='position.title', default="")
+
+    class Meta:
+        model = Employee
+        fields = ['first_name', 'last_name', 'position']
+
+
 class LeaveRequestSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     approved_by_name = serializers.CharField(source='approved_by.full_name', read_only=True)
+    approved_by = ApprovedByMiniSerializer(read_only=True)
+    employee = EmployeeListSerializer(read_only=True)
     
     class Meta:
         model = LeaveRequest
@@ -24,6 +38,23 @@ class LeaveRequestCreateSerializer(serializers.ModelSerializer):
             'employee', 'leave_type', 'start_date', 'end_date', 
             'days_requested', 'reason', 'supporting_documents'
         ]
+    
+    def validate(self, data):
+        """Validate that days_requested matches the calculated business days"""
+        from .views import calculate_business_days
+        
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        days_requested = data.get('days_requested')
+        
+        if start_date and end_date and days_requested is not None:
+            calculated_days = calculate_business_days(start_date, end_date)
+            if days_requested != calculated_days:
+                raise serializers.ValidationError({
+                    'days_requested': f'Days requested ({days_requested}) does not match calculated business days ({calculated_days}). Business days are calculated Monday to Saturday, excluding Sunday.'
+                })
+        
+        return data
 
 
 class LeaveCreditSerializer(serializers.ModelSerializer):

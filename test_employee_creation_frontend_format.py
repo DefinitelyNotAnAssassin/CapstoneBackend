@@ -29,7 +29,7 @@ test_employee = {
 }
 
 def test_employee_creation():
-    url = "http://localhost:8000/api/employees/"
+    url = "http://127.0.0.1:8000/api/employees/"
     
     try:
         print("Testing employee creation with frontend-formatted dates...")
@@ -56,7 +56,7 @@ def test_employee_creation():
                 print(f"Error: {response.text}")
     
     except requests.exceptions.ConnectionError:
-        print("❌ Could not connect to Django server. Make sure it's running on http://localhost:8000")
+        print("❌ Could not connect to Django server. Make sure it's running on http://127.0.0.1:8000")
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
 

@@ -89,7 +89,6 @@ class Employee(models.Model):
     
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.employee_id})"
-    
     @property
     def full_name(self):
         parts = [self.first_name]
@@ -127,6 +126,28 @@ class Employee(models.Model):
     def can_approve_leaves(self):
         """Check if employee can approve leave requests"""
         return self.academic_role_level is not None and self.academic_role_level <= 2
+    
+    @property
+    def isHR(self):
+        """
+        Check if employee is from HR department.
+        HR employees have access to all modules and administrative functions.
+        """
+        if not self.department:
+            return False
+        
+        # Check if department name contains HR-related keywords
+        hr_keywords = [
+            'human resources',
+            'hr',
+            'hr department', 
+            'hr main office',
+            'human resource',
+            'personnel'
+        ]
+        
+        department_name = self.department.name.strip().lower()
+        return any(keyword in department_name for keyword in hr_keywords)
     
     @property
     def approval_scope(self):

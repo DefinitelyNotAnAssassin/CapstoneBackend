@@ -4,7 +4,7 @@ This document describes the Django REST Framework API endpoints for the HRIS (Hu
 
 ## Base URL
 ```
-http://localhost:8000/api/
+http://127.0.0.1:8000/api/
 ```
 
 ## Authentication
@@ -169,7 +169,7 @@ All list endpoints return paginated data:
 ```json
 {
   "count": 100,
-  "next": "http://localhost:8000/api/employees/?page=2",
+  "next": "http://127.0.0.1:8000/api/employees/?page=2",
   "previous": null,
   "results": [...]
 }
