@@ -262,9 +262,17 @@ def login_view(request):
             # Generate a simple token (in production, use JWT or proper token system)
             token = str(uuid.uuid4())
             
-            # Store token in a simple way (in production, use proper token storage)
-            # For now, we'll just return the token and let frontend handle storage
+            # Store token in both memory and cache (cache persists across restarts)
             TOKEN_STORAGE[token] = employee.id
+            
+            # Store in cache with 7 days expiry
+            cache.set(f'token_{token}', employee.id, timeout=60*60*24*7)
+            
+            # Also store a reverse mapping for logout
+            cache.set(f'employee_{employee.id}_token', token, timeout=60*60*24*7)
+            
+            print(f"DEBUG login: Stored token for employee {employee.id}: {token[:10]}...")
+            print(f"DEBUG login: TOKEN_STORAGE now has {len(TOKEN_STORAGE)} tokens")
             
             # Prepare employee data
             employee_data = {
@@ -380,12 +388,33 @@ def logout_view(request):
     token = request.data.get('token')
     
     if token in TOKEN_STORAGE:
-        del TOKEN_STORAGE[token]  # Invalidate the token
+        employee_id = TOKEN_STORAGE[token]
+        del TOKEN_STORAGE[token]  # Invalidate the token from memory
+        
+        # Also clear from cache
+        cache.delete(f'token_{token}')
+        cache.delete(f'employee_{employee_id}_token')
+        
+        print(f"DEBUG: Logged out token {token[:10]}... for employee {employee_id}")
+        
         return Response({
             'success': True,
             'message': 'Logged out successfully'
         }, status=status.HTTP_200_OK)
     else:
+        # Check if token exists in cache
+        employee_id = cache.get(f'token_{token}')
+        if employee_id:
+            cache.delete(f'token_{token}')
+            cache.delete(f'employee_{employee_id}_token')
+            
+            print(f"DEBUG: Logged out cached token {token[:10]}... for employee {employee_id}")
+            
+            return Response({
+                'success': True,
+                'message': 'Logged out successfully'
+            }, status=status.HTTP_200_OK)
+        
         return Response({
             'error': 'Invalid or expired token'
         }, status=status.HTTP_401_UNAUTHORIZED)
@@ -430,7 +459,13 @@ def demo_login(request):
             if demo_employee:
                 # Store the token linking to this employee for demo purposes
                 TOKEN_STORAGE[token] = demo_employee.id
+                
+                # Also store in cache with 7 days expiry
+                cache.set(f'token_{token}', demo_employee.id, timeout=60*60*24*7)
+                cache.set(f'employee_{demo_employee.id}_token', token, timeout=60*60*24*7)
+                
                 print(f"DEBUG: Demo admin token {token[:10]}... stored for employee {demo_employee}")
+                print(f"DEBUG: TOKEN_STORAGE now has {len(TOKEN_STORAGE)} tokens")
             else:
                 print("DEBUG: No employees with approval permissions found for demo admin")
         except Exception as e:

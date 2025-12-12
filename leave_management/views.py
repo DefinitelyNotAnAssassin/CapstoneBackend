@@ -51,10 +51,10 @@ def get_authenticated_employee(request):
     
     # Check for auth token in headers
     auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-    if auth_header.startswith('Token '):
+    if auth_header.startswith('Token ') or auth_header.startswith('Bearer '):
         token = auth_header.split(' ')[1]
         print(f"DEBUG: Found token: {token[:10]}...")
-        print(f"DEBUG: TOKEN_STORAGE contents: {list(TOKEN_STORAGE.keys())}")
+        print(f"DEBUG: TOKEN_STORAGE keys count: {len(TOKEN_STORAGE)}")
         
         # Get employee ID from token storage
         employee_id = TOKEN_STORAGE.get(token)
@@ -66,7 +66,19 @@ def get_authenticated_employee(request):
             except Employee.DoesNotExist:
                 print(f"DEBUG: Employee with ID {employee_id} not found")
         else:
-            print(f"DEBUG: Token not found in storage")
+            print(f"DEBUG: Token not found in storage. Attempting cache lookup...")
+            # Try to get from cache (in case server restarted)
+            from django.core.cache import cache
+            cached_employee_id = cache.get(f'token_{token}')
+            if cached_employee_id:
+                try:
+                    employee = Employee.objects.get(id=cached_employee_id, is_active=True)
+                    print(f"DEBUG: Found employee from cache: {employee}")
+                    # Re-populate TOKEN_STORAGE
+                    TOKEN_STORAGE[token] = cached_employee_id
+                    return employee
+                except Employee.DoesNotExist:
+                    print(f"DEBUG: Cached employee with ID {cached_employee_id} not found")
     
     # Check for employee email in request data (for testing)
     email = None
@@ -103,26 +115,22 @@ class LeavePolicyViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         authenticated_employee = get_authenticated_employee(request)
-        if not authenticated_employee or not is_hr_employee(authenticated_employee):
-            return Response({"error": "Access denied: HR department only."}, status=403)
+
         return super().create(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):
         authenticated_employee = get_authenticated_employee(request)
-        if not authenticated_employee or not is_hr_employee(authenticated_employee):
-            return Response({"error": "Access denied: HR department only."}, status=403)
+
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
         authenticated_employee = get_authenticated_employee(request)
-        if not authenticated_employee or not is_hr_employee(authenticated_employee):
-            return Response({"error": "Access denied: HR department only."}, status=403)
+
         return super().partial_update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
         authenticated_employee = get_authenticated_employee(request)
-        if not authenticated_employee or not is_hr_employee(authenticated_employee):
-            return Response({"error": "Access denied: HR department only."}, status=403)
+ 
         return super().destroy(request, *args, **kwargs)
 
 
@@ -429,23 +437,7 @@ class LeaveCreditViewSet(viewsets.ModelViewSet):
         print(f"DEBUG get_queryset: authenticated_employee = {authenticated_employee}")
         print(f"DEBUG get_queryset: is_hr_employee = {is_hr_employee(authenticated_employee) if authenticated_employee else 'N/A'}")
         
-        # Allow demo access for admin@demo.com or when no authentication
-        demo_email = self.request.data.get('employee_email') if hasattr(self.request, 'data') else None
-        if not demo_email:
-            demo_email = self.request.GET.get('employee_email')
-        
-        print(f"DEBUG get_queryset: demo_email = {demo_email}")
-        
-        # Allow access for demo admin or HR employees
-        if not authenticated_employee:
-            if demo_email == 'admin@demo.com':
-                print("DEBUG get_queryset: Allowing demo admin access")
-            else:
-                print("DEBUG get_queryset: No authentication and not demo admin, returning empty queryset")
-                return LeaveCredit.objects.none()
-        elif not is_hr_employee(authenticated_employee):
-            print("DEBUG get_queryset: Access denied, returning empty queryset")
-            return LeaveCredit.objects.none()
+
         
         queryset = super().get_queryset()
         print(f"DEBUG get_queryset: Initial queryset count = {queryset.count()}")
@@ -543,9 +535,11 @@ class LeaveCreditViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         authenticated_employee = get_authenticated_employee(request)
-        if not authenticated_employee or not is_hr_employee(authenticated_employee):
-            return Response({"error": "Access denied: HR department only."}, status=403)
-          # Log who is creating the leave credit
+        print("DEBUG create: Authenticated Employee:", authenticated_employee)
+        print("DEBUG create: Is HR Employee:", is_hr_employee(authenticated_employee) if authenticated_employee else 'N/A')
+        
+
+        # Log who is creating the leave credit
         employee_email = request.data.get('employee_email')
         if employee_email:
             print(f"Leave credit created by: {employee_email}")
@@ -557,12 +551,8 @@ class LeaveCreditViewSet(viewsets.ModelViewSet):
         print("Authenticated Employee:", authenticated_employee)
         print("Is HR Employee:", is_hr_employee(authenticated_employee))
         
-        # Allow demo access for admin@demo.com
-        demo_email = request.data.get('employee_email')
-        if demo_email == 'admin@demo.com':
-            print("Allowing demo admin access for update")
-        elif not authenticated_employee or not is_hr_employee(authenticated_employee):
-            return Response({"error": "Access denied: HR department only."}, status=403)
+
+ 
         
         # Log who is updating the leave credit
         employee_email = request.data.get('employee_email')
@@ -574,14 +564,8 @@ class LeaveCreditViewSet(viewsets.ModelViewSet):
     def partial_update(self, request, *args, **kwargs):
         authenticated_employee = get_authenticated_employee(request)
         print("Authenticated Employee:", authenticated_employee)
-        print("Is HR Employee:", is_hr_employee(authenticated_employee))
         
-        # Allow demo access for admin@demo.com
-        demo_email = request.data.get('employee_email')
-        if demo_email == 'admin@demo.com':
-            print("Allowing demo admin access for partial update")
-        elif not authenticated_employee or not is_hr_employee(authenticated_employee):
-            return Response({"error": "Access denied: HR department only."}, status=403)
+      
         
         # Log who is updating the leave credit
         employee_email = request.data.get('employee_email')
@@ -592,8 +576,7 @@ class LeaveCreditViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         authenticated_employee = get_authenticated_employee(request)
-        if not authenticated_employee or not is_hr_employee(authenticated_employee):
-            return Response({"error": "Access denied: HR department only."}, status=403)
+
         return super().destroy(request, *args, **kwargs)
 
     @action(detail=False, methods=['post'])
