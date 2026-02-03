@@ -41,8 +41,11 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "employees",
-    "organizations", 
-    "leave_management", 
+    "organizations",
+    # Leave management apps (separated by domain)
+    "leave_policies",
+    "leave_requests",
+    "leave_credits",
 ]
 
 MIDDLEWARE = [

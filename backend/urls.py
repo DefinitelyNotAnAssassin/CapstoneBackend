@@ -22,5 +22,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("organizations.urls")),
     path("", include("employees.urls")),
-    path("", include("leave_management.urls")),
+    # Leave management apps (separated by domain)
+    path("", include("leave_policies.urls")),
+    path("", include("leave_requests.urls")),
+    path("", include("leave_credits.urls")),
 ]
