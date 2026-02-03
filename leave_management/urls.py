@@ -1,14 +1,19 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import (
-    LeavePolicyViewSet, LeaveRequestViewSet, LeaveCreditViewSet
-)
+"""
+DEPRECATED: This module is kept for backwards compatibility.
+The leave management URL configuration has been split into separate apps:
+- leave_policies/urls.py: Leave policy endpoints
+- leave_requests/urls.py: Leave request endpoints
+- leave_credits/urls.py: Leave credit and balance endpoints
 
-router = DefaultRouter()
-router.register(r'leave-policies', LeavePolicyViewSet)
-router.register(r'leave-requests', LeaveRequestViewSet)
-router.register(r'leave-credits', LeaveCreditViewSet)
+For backwards compatibility, this file includes all URLs from the new apps.
+"""
+
+from django.urls import path, include
 
 urlpatterns = [
-    path('api/', include(router.urls)),
+    # Include URLs from new apps for backwards compatibility
+    path('', include('leave_policies.urls')),
+    path('', include('leave_requests.urls')),
+    path('', include('leave_credits.urls')),
 ]
+

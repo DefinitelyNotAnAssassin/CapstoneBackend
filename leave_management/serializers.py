@@ -1,84 +1,31 @@
-from rest_framework import serializers
-from .models import LeavePolicy, LeaveRequest, LeaveCredit, LeaveBalance
-from employees.serializers import EmployeeListSerializer
-from employees.models import Employee
+"""
+DEPRECATED: This module is kept for backwards compatibility.
+The leave management functionality has been split into separate apps:
+- leave_policies: LeavePolicySerializer
+- leave_requests: LeaveRequestSerializer, LeaveRequestCreateSerializer, ApprovedByMiniSerializer
+- leave_credits: LeaveCreditSerializer, LeaveBalanceSerializer
 
+Import from the new apps instead:
+    from leave_policies.serializers import LeavePolicySerializer
+    from leave_requests.serializers import LeaveRequestSerializer, LeaveRequestCreateSerializer
+    from leave_credits.serializers import LeaveCreditSerializer, LeaveBalanceSerializer
+"""
 
-class LeavePolicySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = LeavePolicy
-        fields = '__all__'
+# Backwards compatibility imports
+from leave_policies.serializers import LeavePolicySerializer
+from leave_requests.serializers import (
+    LeaveRequestSerializer,
+    LeaveRequestCreateSerializer,
+    ApprovedByMiniSerializer
+)
+from leave_credits.serializers import LeaveCreditSerializer, LeaveBalanceSerializer
 
+__all__ = [
+    'LeavePolicySerializer',
+    'LeaveRequestSerializer',
+    'LeaveRequestCreateSerializer',
+    'ApprovedByMiniSerializer',
+    'LeaveCreditSerializer',
+    'LeaveBalanceSerializer'
+]
 
-class ApprovedByMiniSerializer(serializers.ModelSerializer):
-    first_name = serializers.CharField()
-    last_name = serializers.CharField()
-    position = serializers.CharField(source='position.title', default="")
-
-    class Meta:
-        model = Employee
-        fields = ['first_name', 'last_name', 'position']
-
-
-class LeaveRequestSerializer(serializers.ModelSerializer):
-    employee_name = serializers.CharField(source='employee.full_name', read_only=True)
-    approved_by_name = serializers.CharField(source='approved_by.full_name', read_only=True)
-    approved_by = ApprovedByMiniSerializer(read_only=True)
-    employee = EmployeeListSerializer(read_only=True)
-    
-    class Meta:
-        model = LeaveRequest
-        fields = '__all__'
-
-
-class LeaveRequestCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = LeaveRequest
-        fields = [
-            'employee', 'leave_type', 'start_date', 'end_date', 
-            'days_requested', 'reason', 'supporting_documents'
-        ]
-    
-    def validate(self, data):
-        """Validate that days_requested matches the calculated business days"""
-        from .views import calculate_business_days
-        
-        start_date = data.get('start_date')
-        end_date = data.get('end_date')
-        days_requested = data.get('days_requested')
-        
-        if start_date and end_date and days_requested is not None:
-            calculated_days = calculate_business_days(start_date, end_date)
-            if days_requested != calculated_days:
-                raise serializers.ValidationError({
-                    'days_requested': f'Days requested ({days_requested}) does not match calculated business days ({calculated_days}). Business days are calculated Monday to Saturday, excluding Sunday.'
-                })
-        
-        return data
-
-
-class LeaveCreditSerializer(serializers.ModelSerializer):
-    employee_name = serializers.CharField(source='employee.full_name', read_only=True)
-    remaining_credits = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, read_only=True)
-    
-    class Meta:
-        model = LeaveCredit
-        fields = '__all__'
-    
-    def create(self, validated_data):
-        # Remove remaining_credits if provided, let the model calculate it
-        validated_data.pop('remaining_credits', None)
-        return super().create(validated_data)
-    
-    def update(self, instance, validated_data):
-        # Remove remaining_credits if provided, let the model calculate it
-        validated_data.pop('remaining_credits', None)
-        return super().update(instance, validated_data)
-
-
-class LeaveBalanceSerializer(serializers.ModelSerializer):
-    employee_name = serializers.CharField(source='employee.full_name', read_only=True)
-    
-    class Meta:
-        model = LeaveBalance
-        fields = '__all__'

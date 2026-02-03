@@ -12,13 +12,15 @@ class ApprovedByMiniSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Employee
-        fields = ['first_name', 'last_name', 'position']
+        fields = ['id', 'first_name', 'last_name', 'position']
 
 
 class LeaveRequestSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     approved_by_name = serializers.CharField(source='approved_by.full_name', read_only=True)
+    supervisor_approved_by_name = serializers.CharField(source='supervisor_approved_by.full_name', read_only=True)
     approved_by = ApprovedByMiniSerializer(read_only=True)
+    supervisor_approved_by = ApprovedByMiniSerializer(read_only=True)
     employee = EmployeeListSerializer(read_only=True)
     
     class Meta:

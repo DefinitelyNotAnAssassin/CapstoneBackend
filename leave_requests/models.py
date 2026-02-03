@@ -3,10 +3,11 @@ from django.db import models
 
 class LeaveRequest(models.Model):
     STATUS_CHOICES = [
-        ('Pending', 'Pending'),
-        ('Approved', 'Approved'),
-        ('Rejected', 'Rejected'),
-        ('Cancelled', 'Cancelled'),
+        ('Pending', 'Pending'),                           # Initial state - awaiting supervisor
+        ('Supervisor_Approved', 'Supervisor Approved'),   # Pre-approved by supervisor, awaiting HR
+        ('Approved', 'Approved'),                         # Fully approved by HR
+        ('Rejected', 'Rejected'),                         # Rejected at any stage
+        ('Cancelled', 'Cancelled'),                       # Cancelled by employee
     ]
     
     LEAVE_TYPES = [
@@ -27,7 +28,18 @@ class LeaveRequest(models.Model):
     reason = models.TextField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
     
-    # Approval fields
+    # Supervisor Pre-Approval fields (Step 1)
+    supervisor_approved_by = models.ForeignKey(
+        'employees.Employee', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='supervisor_approved_leaves'
+    )
+    supervisor_approval_date = models.DateTimeField(null=True, blank=True)
+    supervisor_approval_notes = models.TextField(blank=True, null=True)
+    
+    # HR Final Approval fields (Step 2) - keeping existing field names for backwards compatibility
     approved_by = models.ForeignKey('employees.Employee', on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_leaves')
     approval_date = models.DateTimeField(null=True, blank=True)
     approval_notes = models.TextField(blank=True, null=True)
