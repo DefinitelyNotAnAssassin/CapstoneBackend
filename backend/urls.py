@@ -22,6 +22,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("organizations.urls")),
     path("", include("employees.urls")),
+    # Role-Based Access Control
+    path("api/rbac/", include("rbac.urls")),
     # Leave management apps (separated by domain)
     path("", include("leave_policies.urls")),
     path("", include("leave_requests.urls")),

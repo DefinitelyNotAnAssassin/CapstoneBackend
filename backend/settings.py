@@ -42,6 +42,8 @@ INSTALLED_APPS = [
     "corsheaders",
     "employees",
     "organizations",
+    # Role-Based Access Control
+    "rbac",
     # Leave management apps (separated by domain)
     "leave_policies",
     "leave_requests",
@@ -158,6 +160,29 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOW_ALL_ORIGINS = True  # Only for development
+
+# Allow all HTTP methods and headers for CORS
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+    "x-employee-email",
+]
 
 # Logging configuration to show logs in the console during development
 LOGGING = {
