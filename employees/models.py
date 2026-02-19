@@ -83,6 +83,7 @@ class Employee(models.Model):
     # Profile
     profile_image = models.URLField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
+    is_hr = models.BooleanField(default=False, help_text="Indicates if the employee is part of HR department with special permissions.")
       # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

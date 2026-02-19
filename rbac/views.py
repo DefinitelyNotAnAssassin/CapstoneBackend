@@ -597,8 +597,8 @@ def get_employee_permissions(request, employee_id):
         if scope_hierarchy.index(scope) < scope_hierarchy.index(approval_scope):
             approval_scope = scope
     
-    # Check if employee is HR (has all permissions or special HR role)
-    is_hr = 'hr_full_access' in all_permissions or highest_level == -1
+    # Check if employee is HR (model field, has all permissions, or special HR role)
+    is_hr = employee.is_hr or 'hr_full_access' in all_permissions or highest_level == -1
     
     # Can approve if has any approval-related permissions
     can_approve = any(p.startswith('can_approve') or p == 'leave_approve' for p in all_permissions)

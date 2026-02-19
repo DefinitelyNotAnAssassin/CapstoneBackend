@@ -1,0 +1,13 @@
+# Firebase service account key (NEVER commit this)
+serviceAccountKey.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+venv/
+.env
+
+# Django
+db.sqlite3
+*.log

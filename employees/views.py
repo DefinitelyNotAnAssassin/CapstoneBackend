@@ -287,7 +287,8 @@ def login_view(request):
                 'department_name': employee.department.name if employee.department else '',
                 'office_name': employee.office.name if employee.office else '',
                 'profile_image': employee.profile_image,
-                'is_active': employee.is_active
+                'is_active': employee.is_active,
+                'is_hr': employee.is_hr
             }
             
             # Prepare user data

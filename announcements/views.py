@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 
 import firebase_admin
 from firebase_admin import credentials, firestore, messaging
@@ -7,6 +8,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+from django.conf import settings
 from employees.models import Employee
 from .models import Announcement
 from .serializers import AnnouncementSerializer
@@ -29,11 +31,28 @@ def _get_firebase_app():
         _firebase_app = firebase_admin.get_app()
     except ValueError:
         try:
-            _firebase_app = firebase_admin.initialize_app()
-        except Exception:
+            # Look for service account key file
+            key_path = os.environ.get(
+                "GOOGLE_APPLICATION_CREDENTIALS",
+                os.path.join(settings.BASE_DIR, "serviceAccountKey.json"),
+            )
+            if os.path.isfile(key_path):
+                cred = credentials.Certificate(key_path)
+                _firebase_app = firebase_admin.initialize_app(cred)
+                logger.info("Firebase Admin SDK initialised with service account key.")
+            else:
+                logger.warning(
+                    "Service account key not found at %s. "
+                    "Download it from Firebase Console → Project Settings → Service accounts. "
+                    "Push notifications will be unavailable.",
+                    key_path,
+                )
+                return None
+        except Exception as exc:
             logger.warning(
-                "Firebase Admin SDK could not be initialised.  "
-                "Push notifications will be unavailable."
+                "Firebase Admin SDK could not be initialised: %s. "
+                "Push notifications will be unavailable.",
+                exc,
             )
             return None
     return _firebase_app
@@ -75,6 +94,17 @@ def _send_fcm_notifications(announcement: Announcement):
                 "announcement_id": str(announcement.id),
                 "priority": announcement.priority,
             },
+            webpush=messaging.WebpushConfig(
+                notification=messaging.WebpushNotification(
+                    icon="/notification-icon-192.png",
+                    badge="/notification-badge-96.png",
+                    tag=f"announcement-{announcement.id}",
+                    renotify=True,
+                ),
+                fcm_options=messaging.WebpushFCMOptions(
+                    link="/announcements",
+                ),
+            ),
             tokens=tokens,
         )
 
