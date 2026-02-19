@@ -48,6 +48,10 @@ INSTALLED_APPS = [
     "leave_policies",
     "leave_requests",
     "leave_credits",
+    # Employee packages
+    "employee_packages",
+    # Announcements
+    "announcements",
 ]
 
 MIDDLEWARE = [

@@ -28,4 +28,8 @@ urlpatterns = [
     path("", include("leave_policies.urls")),
     path("", include("leave_requests.urls")),
     path("", include("leave_credits.urls")),
+    # Employee packages
+    path("", include("employee_packages.urls")),
+    # Announcements
+    path("", include("announcements.urls")),
 ]

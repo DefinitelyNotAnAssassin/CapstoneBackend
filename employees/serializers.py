@@ -145,6 +145,15 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=6, required=False, default='sdca2025')
     username = serializers.CharField(write_only=True, required=False)
     
+    # Leave package selection (optional)
+    leave_package_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    
+    # Custom leave package items (for "Custom Package" option)
+    custom_leave_items = serializers.ListField(
+        child=serializers.DictField(), write_only=True, required=False,
+        help_text="List of {leave_type, quantity} for custom packages."
+    )
+    
     # Education data
     additional_education = serializers.ListField(
         child=serializers.DictField(), write_only=True, required=False
@@ -163,10 +172,21 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
         if not value:
             return 'sdca2025'
         return value
+    
+    def validate_leave_package_id(self, value):
+        if value is not None:
+            from employee_packages.models import LeavePackage
+            if not LeavePackage.objects.filter(pk=value, is_active=True).exists():
+                raise serializers.ValidationError("Selected leave package does not exist or is inactive.")
+        return value
         
     def create(self, validated_data):
         # Extract additional education data
         additional_education_data = validated_data.pop('additional_education', [])
+        
+        # Extract leave package data
+        leave_package_id = validated_data.pop('leave_package_id', None)
+        custom_leave_items = validated_data.pop('custom_leave_items', [])
         
         # Extract user creation data
         password = validated_data.pop('password', 'sdca2025')
@@ -197,4 +217,47 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
                 graduated=True
             )
         
+        # Apply leave package (predefined or custom)
+        self._apply_leave_package(employee, leave_package_id, custom_leave_items)
+        
         return employee
+    
+    def _apply_leave_package(self, employee, leave_package_id, custom_leave_items):
+        """Create leave credits for the employee based on the selected package."""
+        from employee_packages.models import LeavePackage
+        from leave_credits.models import LeaveCredit
+        from datetime import datetime
+        
+        year = datetime.now().year
+        
+        if leave_package_id:
+            try:
+                package = LeavePackage.objects.prefetch_related('items').get(pk=leave_package_id)
+                for item in package.items.all():
+                    LeaveCredit.objects.update_or_create(
+                        employee=employee,
+                        leave_type=item.leave_type,
+                        year=year,
+                        defaults={
+                            'total_credits': item.quantity,
+                            'remaining_credits': item.quantity,
+                            'used_credits': 0,
+                        },
+                    )
+            except LeavePackage.DoesNotExist:
+                pass
+        elif custom_leave_items:
+            for item in custom_leave_items:
+                leave_type = item.get('leave_type')
+                quantity = item.get('quantity', 0)
+                if leave_type and quantity:
+                    LeaveCredit.objects.update_or_create(
+                        employee=employee,
+                        leave_type=leave_type,
+                        year=year,
+                        defaults={
+                            'total_credits': quantity,
+                            'remaining_credits': quantity,
+                            'used_credits': 0,
+                        },
+                    )
