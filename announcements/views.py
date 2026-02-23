@@ -102,7 +102,7 @@ def _send_fcm_notifications(announcement: Announcement):
                     renotify=True,
                 ),
                 fcm_options=messaging.WebpushFCMOptions(
-                    link="https://sdca-hris-ionic.vercel.app/announcements",
+                    link="https:///hris-sdca.vercel.app/announcements",
                 ),
             ),
             tokens=tokens,
